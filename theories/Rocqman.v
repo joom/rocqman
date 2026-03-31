@@ -1033,13 +1033,20 @@ Definition frame_delay (frame_start : nat) : IO void :=
 (** The collision distance threshold in pixels. *)
 Definition collision_threshold : nat := 22.
 
+(** Sound played when a power pellet is consumed. *)
 Definition snd_checkmark : PrimString.string := "assets/checkmark.mp3".
+(** Sound played when the player reaches game over. *)
 Definition snd_game_over : PrimString.string := "assets/game-over.mp3".
+(** Sound played when a frightened ghost is eaten. *)
 Definition snd_kill_ghost : PrimString.string := "assets/kill-ghost.mp3".
+(** Sound played when the player loses a life but the game continues. *)
 Definition snd_lose_life : PrimString.string := "assets/lose-life.mp3".
+(** Sound played when a regular dot is consumed. *)
 Definition snd_tap : PrimString.string := "assets/tap.mp3".
+(** Sound played when the player wins the game. *)
 Definition snd_win : PrimString.string := "assets/win.mp3".
 
+(** Select the collectible sound effect corresponding to the eaten cell. *)
 Definition play_cell_sound (c : cell) : IO void :=
   match c with
   | Dot => sdl_play_sound snd_tap
@@ -1198,13 +1205,17 @@ End Rocqman.
 Import Rocqman.
 Import MonadNotations.
 
+(** An extracted C integer type used as the program's return type. *)
 Axiom c_int : Type.
+(** The integer zero returned on normal program exit. *)
 Axiom c_zero : c_int.
 
+(** Destroy SDL resources and return a successful process exit code. *)
 Definition exit_game (win : sdl_window) (ren : sdl_renderer) : IO c_int :=
   cleanup ren win ;;
   Ret c_zero.
 
+(** Run the extracted main loop for up to [fuel] iterations. *)
 Fixpoint run_game (fuel : nat) (win : sdl_window) (ren : sdl_renderer)
                   (ls : loop_state) : IO c_int :=
   match fuel with
@@ -1218,6 +1229,7 @@ Fixpoint run_game (fuel : nat) (win : sdl_window) (ren : sdl_renderer)
       run_game fuel' win ren new_ls
   end.
 
+(** Initialize the game and enter the extracted top-level loop. *)
 Definition main : IO c_int :=
   init <- init_game ;;
   let '(win_ren, ls) := init in

@@ -153,8 +153,9 @@ This removes:
 │   └── sdl_helpers.h   C++ SDL and audio helper functions
 ├── theories/
 │   ├── Rocqman.v       game logic, rendering, extracted main
+│   ├── RocqmanProofs.v proofs about gameplay transitions and control flow
 │   ├── SDL.v           Rocq-side SDL bindings and extraction directives
-│   └── dune            Coq theory stanza
+│   └── dune            Rocq theory stanza
 ├── Makefile            extraction and native build entrypoint
 ├── dune-project        Dune project file
 └── README.md
@@ -167,6 +168,10 @@ src/generated/
 ```
 
 These are build artifacts and should not be edited manually.
+
+## What Is Proved
+
+The file [`theories/RocqmanProofs.v`](./theories/RocqmanProofs.v) contains machine-checked proofs about the current game logic. At the moment, those proofs show that the pure gameplay transitions used by the frame loop preserve key monotonicity properties: score never decreases, lives never increase, and the number of collectibles left never increases. It also proves that terminal logical states are fixed points of [`tick`](./theories/Rocqman.v), that paused gameplay stays paused until space is pressed, that pressing space while paused returns to `Playing`, and that `WinScreen` and `GameOverScreen` eventually request quit once enough time has elapsed.
 
 ## Development notes
 
