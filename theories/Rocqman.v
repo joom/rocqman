@@ -45,7 +45,7 @@ Inductive direction : Type := Up | Down | Left | Right | DirNone.
 Inductive ghost_mode : Type := Chase | Frightened.
 
 (** Game phase for screen transitions. *)
-Inductive phase : Type := Playing | DeathPause | GameOverScreen | WinScreen.
+Inductive phase : Type := Playing | Paused | DeathPause | GameOverScreen | WinScreen.
 
 (** A row/column position on the board. *)
 Record position : Type := mkPos { prow : nat; pcol : nat }.
@@ -696,6 +696,10 @@ Definition msg_you_win : list nat :=
 Definition msg_lives_left (n : nat) : list nat :=
   nat_digit_list n ++ [10;22;19;32;15;29;10;22;15;16;30].
 
+(** "PAUSED" *)
+Definition msg_paused : list nat :=
+  [26;11;31;29;15;14].
+
 (** Draw centered arcade text on a black screen. *)
 Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
   : IO void :=
@@ -709,6 +713,16 @@ Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
   sdl_set_draw_color ren 255 255 255 ;;
   draw_glyphs ren sx sy s msg ;;
   sdl_present ren.
+
+(** Draw centered arcade text in the status bar area. *)
+Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : IO void :=
+  let s := 3 in
+  let glyph_w := 6 * s in
+  let text_w := length msg * glyph_w in
+  let sx := Nat.div (win_width - text_w) 2 in
+  let sy := board_height * cell_size + Nat.div (status_height - 7 * s) 2 in
+  sdl_set_draw_color ren 255 255 255 ;;
+  draw_glyphs ren sx sy s msg.
 
 (** * Life icon *)
 
@@ -908,10 +922,24 @@ Definition render_frame (ren : sdl_renderer) (tex : sdl_texture)
   draw_status_bar ren gs ;;
   sdl_present ren.
 
+(** Render a paused frame with the current game view and a status message. *)
+Definition render_paused_frame (ren : sdl_renderer) (tex : sdl_texture)
+                        (gs : game_state)
+                        (prev_pac : position) (prev_ghosts : list ghost_state)
+                        (t_num t_den : nat) (time_ms : nat) : IO void :=
+  sdl_set_draw_color ren 0 0 0 ;;
+  sdl_clear ren ;;
+  draw_board_sdl ren gs time_ms ;;
+  draw_ghosts_aux ren 0 (ghosts gs) prev_ghosts t_num t_den time_ms ;;
+  draw_player_sdl ren tex gs prev_pac t_num t_den ;;
+  draw_status_bar ren gs ;;
+  draw_status_message ren msg_paused ;;
+  sdl_present ren.
+
 (** * Event handling *)
 
 (** Map an SDL event code to a quit flag and updated game state.
-    Event codes: 1=quit, 2=up, 3=down, 4=left, 5=right, 0/other=none. *)
+    Event codes: 1=quit, 2=up, 3=down, 4=left, 5=right, 6=pause. *)
 Definition handle_event (ev : nat) (gs : game_state) : (bool * game_state) :=
   match ev with
   | 1 => (true, gs)
@@ -919,6 +947,7 @@ Definition handle_event (ev : nat) (gs : game_state) : (bool * game_state) :=
   | 3 => (false, set_direction Down gs)
   | 4 => (false, set_direction Left gs)
   | 5 => (false, set_direction Right gs)
+  | 6 => (false, gs)
   | _ => (false, gs)
   end.
 
@@ -1030,6 +1059,15 @@ Definition process_frame (ren : sdl_renderer) (ls : loop_state)
   let time_ms := now - ls_start_time ls in
   match ls_phase ls with
   | Playing =>
+    if Nat.eqb ev 6 then
+      render_paused_frame ren (ls_texture ls) (ls_game ls)
+                          (ls_prev_pac ls) (ls_prev_ghosts ls)
+                          0 1 time_ms ;;
+      frame_delay now ;;
+      Ret (false, mkLoop (ls_game ls) (ls_prev_pac ls) (ls_prev_ghosts ls)
+                         now (ls_start_time ls) (ls_texture ls)
+                         Paused now false)
+    else
     let gs1 := apply_direction ev (ls_game ls) in
     let elapsed := now - ls_last_tick ls in
     let do_tick := Nat.leb tick_ms elapsed in
@@ -1097,6 +1135,19 @@ Definition process_frame (ren : sdl_renderer) (ls : loop_state)
                          new_last_tick (ls_start_time ls) (ls_texture ls)
                          Playing 0 false)
     end
+
+  | Paused =>
+    if Nat.eqb ev 6 then
+      let gs := ls_game ls in
+      Ret (false, mkLoop gs (pacpos gs) (ghosts gs)
+                         now (ls_start_time ls) (ls_texture ls)
+                         Playing 0 false)
+    else
+      render_paused_frame ren (ls_texture ls) (ls_game ls)
+                          (ls_prev_pac ls) (ls_prev_ghosts ls)
+                          0 1 time_ms ;;
+      frame_delay now ;;
+      Ret (false, ls)
 
   | DeathPause =>
     if Nat.leb 2000 (now - ls_phase_time ls) then

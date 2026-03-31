@@ -61,7 +61,7 @@ inline void sdl_draw_point(sdl_renderer r,
 }
 
 // event polling
-// Returns: 0=none, 1=quit, 2=up, 3=down, 4=left, 5=right
+// Returns: 0=none, 1=quit, 2=up, 3=down, 4=left, 5=right, 6=pause
 inline unsigned int sdl_poll_event() {
   SDL_Event ev;
   unsigned int result = 0;
@@ -87,6 +87,9 @@ inline unsigned int sdl_poll_event() {
       case SDLK_RIGHT:
       case SDLK_d:
         result = 5;
+        break;
+      case SDLK_SPACE:
+        result = 6;
         break;
       default:
         break;

@@ -123,6 +123,7 @@ or:
 Controls:
 
 - arrow keys or `WASD`: move
+- `Space`: pause or unpause
 - `Q` or `Esc`: quit
 
 ## Cleaning
