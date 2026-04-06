@@ -11,12 +11,7 @@ endif
 LDFLAGS :=
 
 ifeq ($(UNAME_S),Darwin)
-  BREW_LLVM := $(shell brew --prefix llvm 2>/dev/null)
-  BREW_CLANG := $(BREW_LLVM)/bin/clang++
-  ifneq ($(wildcard $(BREW_CLANG)),)
-    CXX := $(BREW_CLANG)
-    LDFLAGS := -L$(BREW_LLVM)/lib/c++ -Wl,-rpath,$(BREW_LLVM)/lib/c++
-  endif
+  CXX := /usr/bin/clang++
 endif
 
 IS_CLANG := $(shell $(CXX) --version 2>/dev/null | grep -qi clang && echo yes)
