@@ -12,16 +12,16 @@ Import ListNotations.
 From Stdlib Require Import Bool.
 From Stdlib Require Import Reals Rtrigo Ratan.
 From Crane Require Import Mapping.NatIntStd.
-From Crane Require Import Mapping.Std Mapping.Real Monads.ITree Monads.IO.
+From Crane Require Import Mapping.Std Mapping.Real Monads.ITree.
 From Crane Require Extraction.
-From RocqmanGame Require Import SDL.
+From CraneSDL2 Require Import SDL.
 
 Local Open Scope pstring_scope.
+Local Open Scope itree_scope.
 
 Module Rocqman.
 
-Import IO_axioms.
-Import MonadNotations.
+Import ITreeNotations.
 
 (** Two-argument arctangent with the conventional range [-pi, pi]. *)
 Definition real_atan2 (y x : R) : R :=
@@ -32,6 +32,9 @@ Definition real_atan2 (y x : R) : R :=
        else if Rlt_dec R0 y then Rdiv PI (INR 2)
        else if Rlt_dec y R0 then Ropp (Rdiv PI (INR 2))
        else R0.
+
+(** Test bit [n] of a natural number, zero-indexed from the least-significant bit. *)
+Definition nat_testbit : nat -> nat -> bool := Nat.testbit.
 
 (** * Types *)
 
@@ -402,7 +405,7 @@ Definition initial_state : game_state :=
 (** Draw a filled circle row by row, computing the half-width at
     each scanline via integer square root. *)
 Fixpoint filled_circle_rows (ren : sdl_renderer) (cx base_y : nat)
-                            (radius i count : nat) : IO void :=
+                            (radius i count : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -418,12 +421,12 @@ Fixpoint filled_circle_rows (ren : sdl_renderer) (cx base_y : nat)
 
 (** Draw a filled circle centered at [(cx, cy)] with the given radius. *)
 Definition draw_filled_circle (ren : sdl_renderer) (cx cy radius : nat)
-  : IO void :=
+  : itree sdlE void :=
   filled_circle_rows ren cx (cy - radius) radius 0 (radius + radius + 1).
 
 (** Draw the top half of a circle (used for the ghost_state head). *)
 Fixpoint semicircle_top_rows (ren : sdl_renderer) (cx base_y : nat)
-                             (radius i count : nat) : IO void :=
+                             (radius i count : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -435,7 +438,7 @@ Fixpoint semicircle_top_rows (ren : sdl_renderer) (cx base_y : nat)
 
 (** Draw a top semicircle centered at [(cx, cy)]. *)
 Definition draw_top_semicircle (ren : sdl_renderer) (cx cy radius : nat)
-  : IO void :=
+  : itree sdlE void :=
   semicircle_top_rows ren cx (cy - radius) radius 0 (radius + 1).
 
 (** * ghost_state sprite rendering
@@ -458,7 +461,7 @@ Definition ghost_body_color (color_idx : nat)
 (** Draw the ghost_state body: semicircle head, rectangular torso,
     and three scalloped bumps at the bottom. *)
 Definition draw_ghost_body (ren : sdl_renderer) (cx cy : nat)
-                           (radius : nat) (cr cg cb : nat) : IO void :=
+                           (radius : nat) (cr cg cb : nat) : itree sdlE void :=
   sdl_set_draw_color ren cr cg cb ;;
   draw_top_semicircle ren cx cy radius ;;
   sdl_fill_rect ren (cx - radius) cy (radius + radius + 1) radius ;;
@@ -471,7 +474,7 @@ Definition draw_ghost_body (ren : sdl_renderer) (cx cy : nat)
 
 (** Draw the ghost_state's eyes: white sclera and blue pupils. *)
 Definition draw_ghost_eyes (ren : sdl_renderer) (cx cy : nat)
-                           (radius : nat) : IO void :=
+                           (radius : nat) : itree sdlE void :=
   let eye_offset := Nat.div radius 3 in
   sdl_set_draw_color ren 255 255 255 ;;
   draw_filled_circle ren (cx - eye_offset) (cy - 2) 4 ;;
@@ -482,7 +485,7 @@ Definition draw_ghost_eyes (ren : sdl_renderer) (cx cy : nat)
 
 (** Draw a white ⊥ symbol on the ghost_state's body. *)
 Definition draw_ghost_bottom (ren : sdl_renderer)
-                             (cx cy : nat) : IO void :=
+                             (cx cy : nat) : itree sdlE void :=
   sdl_set_draw_color ren 255 255 255 ;;
   (* Vertical bar *)
   sdl_fill_rect ren (cx - 1) (cy - 7) 3 11 ;;
@@ -491,7 +494,7 @@ Definition draw_ghost_bottom (ren : sdl_renderer)
 
 (** Draw a complete ghost_state sprite with a ⊥ symbol on its body. *)
 Definition draw_ghost_sprite (ren : sdl_renderer)
-                             (px py color_idx : nat) : IO void :=
+                             (px py color_idx : nat) : itree sdlE void :=
   let radius := 13 in
   let '(cr, cg, cb) := ghost_body_color color_idx in
   draw_ghost_body ren px py radius cr cg cb ;;
@@ -508,7 +511,7 @@ Definition draw_ghost_sprite (ren : sdl_renderer)
 Fixpoint pac_row_pixels (ren : sdl_renderer)
                         (sx sy_row : nat) (radius : nat)
                         (fdy dir_ang mouth : R)
-                        (dy_sq r2 : nat) (dx count : nat) : IO void :=
+                        (dy_sq r2 : nat) (dx count : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -532,7 +535,7 @@ Fixpoint pac_row_pixels (ren : sdl_renderer)
 (** Iterate over all rows of the Rocqman sprite bounding box. *)
 Fixpoint pac_rows (ren : sdl_renderer) (sx base_y : nat) (radius : nat)
                   (dir_ang mouth : R) (r2 diameter : nat)
-                  (dy count : nat) : IO void :=
+                  (dy count : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -569,7 +572,7 @@ Definition compute_mouth_angle (time_ms : nat) : R :=
 (** Draw the complete Rocqman sprite at pixel position [(px, py)]
     facing direction [dir] with mouth animation based on [time_ms]. *)
 Definition draw_pacman_sprite (ren : sdl_renderer)
-                              (px py dir time_ms : nat) : IO void :=
+                              (px py dir time_ms : nat) : itree sdlE void :=
   let radius := 14 in
   let diameter := radius + radius + 1 in
   let r2 := radius * radius in
@@ -630,7 +633,7 @@ Definition glyph_row_data (g row : nat) : nat :=
 (** Draw one row of a glyph at pixel scale [s]. *)
 Fixpoint draw_glyph_row (ren : sdl_renderer)
                          (sx sy : nat) (row_bits : nat)
-                         (dx count s : nat) : IO void :=
+                         (dx count s : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -642,7 +645,7 @@ Fixpoint draw_glyph_row (ren : sdl_renderer)
 
 (** Draw all 7 rows of a glyph [g] at scale [s]. *)
 Fixpoint draw_glyph_rows (ren : sdl_renderer) (sx sy g : nat)
-                          (row count s : nat) : IO void :=
+                          (row count s : nat) : itree sdlE void :=
   match count with
   | 0 => Ret ghost
   | S count' =>
@@ -652,12 +655,12 @@ Fixpoint draw_glyph_rows (ren : sdl_renderer) (sx sy g : nat)
   end.
 
 (** Draw a single glyph [g] at [(sx, sy)] with pixel scale [s]. *)
-Definition draw_one_glyph (ren : sdl_renderer) (sx sy g s : nat) : IO void :=
+Definition draw_one_glyph (ren : sdl_renderer) (sx sy g s : nat) : itree sdlE void :=
   draw_glyph_rows ren sx sy g 0 7 s.
 
 (** Draw a list of glyphs left to right at scale [s]. *)
 Fixpoint draw_glyphs (ren : sdl_renderer) (sx sy s : nat)
-                      (glyphs : list nat) : IO void :=
+                      (glyphs : list nat) : itree sdlE void :=
   match glyphs with
   | [] => Ret ghost
   | g :: rest =>
@@ -667,7 +670,7 @@ Fixpoint draw_glyphs (ren : sdl_renderer) (sx sy s : nat)
 
 (** Draw a list of digit glyphs at scale 3 (for score display). *)
 Fixpoint draw_number_digits (ren : sdl_renderer) (sx sy : nat)
-                            (digits : list nat) : IO void :=
+                            (digits : list nat) : itree sdlE void :=
   match digits with
   | [] => Ret ghost
   | d :: rest =>
@@ -676,7 +679,7 @@ Fixpoint draw_number_digits (ren : sdl_renderer) (sx sy : nat)
   end.
 
 (** Draw a natural number as white bitmap digits at [(sx, sy)]. *)
-Definition draw_number_sprite (ren : sdl_renderer) (n sx sy : nat) : IO void :=
+Definition draw_number_sprite (ren : sdl_renderer) (n sx sy : nat) : itree sdlE void :=
   sdl_set_draw_color ren 255 255 255 ;;
   draw_number_digits ren sx sy (nat_digit_list n).
 
@@ -702,7 +705,7 @@ Definition msg_paused : list nat :=
 
 (** Draw centered arcade text on a black screen. *)
 Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
-  : IO void :=
+  : itree sdlE void :=
   let s := 4 in
   let glyph_w := 6 * s in
   let text_w := length msg * glyph_w in
@@ -715,7 +718,7 @@ Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
   sdl_present ren.
 
 (** Draw centered arcade text in the status bar area. *)
-Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : IO void :=
+Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : itree sdlE void :=
   let s := 3 in
   let glyph_w := 6 * s in
   let text_w := length msg * glyph_w in
@@ -727,7 +730,7 @@ Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : IO void :
 (** * Life icon *)
 
 (** Draw a small red heart representing one remaining life. *)
-Definition draw_life_icon (ren : sdl_renderer) (x y : nat) : IO void :=
+Definition draw_life_icon (ren : sdl_renderer) (x y : nat) : itree sdlE void :=
   sdl_set_draw_color ren 150 10 35 ;;
   sdl_fill_rect ren (x - 9) (y - 6) 6 6 ;;
   sdl_fill_rect ren (x + 3) (y - 6) 6 6 ;;
@@ -794,7 +797,7 @@ Definition ghost_color_index (idx : nat) (gm : ghost_mode) : nat :=
     the full game frame: board cells, sprites, and the status bar. *)
 
 (** Draw a small green checkmark for power pellets. *)
-Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : IO void :=
+Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : itree sdlE void :=
   sdl_set_draw_color ren 60 200 90 ;;
   sdl_fill_rect ren (cx - 6) (cy + 1) 3 3 ;;
   sdl_fill_rect ren (cx - 3) (cy + 4) 3 3 ;;
@@ -804,7 +807,7 @@ Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : IO void :=
 (** Draw one row of board cells: walls as blue rectangles, dots as
     small white circles, power pellets as green checkmarks. *)
 Fixpoint draw_row_cells (ren : sdl_renderer) (row col : nat)
-                        (cells : list cell) (pellet_phase : nat) : IO void :=
+                        (cells : list cell) (pellet_phase : nat) : itree sdlE void :=
   match cells with
   | [] => Ret ghost
   | c :: rest =>
@@ -825,7 +828,7 @@ Fixpoint draw_row_cells (ren : sdl_renderer) (row col : nat)
 
 (** Draw all board rows. *)
 Fixpoint draw_board_rows (ren : sdl_renderer) (row : nat)
-                         (rows : list (list cell)) (pellet_phase : nat) : IO void :=
+                         (rows : list (list cell)) (pellet_phase : nat) : itree sdlE void :=
   match rows with
   | [] => Ret ghost
   | cells :: rest =>
@@ -835,14 +838,14 @@ Fixpoint draw_board_rows (ren : sdl_renderer) (row : nat)
 
 (** Draw the entire game board. *)
 Definition draw_board_sdl (ren : sdl_renderer) (gs : game_state)
-                          (pellet_phase : nat) : IO void :=
+                          (pellet_phase : nat) : itree sdlE void :=
   draw_board_rows ren 0 (board gs) pellet_phase.
 
 (** Draw all ghosts with smooth interpolation between their previous
     and current positions. *)
 Fixpoint draw_ghosts_aux (ren : sdl_renderer) (idx : nat) (gs : list ghost_state)
                          (prev_gs : list ghost_state)
-                         (t_num t_den : nat) (time_ms : nat) : IO void :=
+                         (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
   match gs with
   | [] => Ret ghost
   | g :: rest =>
@@ -884,7 +887,7 @@ Definition dir_flip_h (d : direction) : bool :=
     from [prev_pos], rotated to face the current direction. *)
 Definition draw_player_sdl (ren : sdl_renderer) (tex : sdl_texture)
                            (gs : game_state) (prev_pos : position)
-                           (t_num t_den : nat) : IO void :=
+                           (t_num t_den : nat) : itree sdlE void :=
   let px := lerp (cell_center_x (pcol prev_pos))
                  (cell_center_x (pcol (pacpos gs))) t_num t_den in
   let py := lerp (cell_center_y (prow prev_pos))
@@ -894,7 +897,7 @@ Definition draw_player_sdl (ren : sdl_renderer) (tex : sdl_texture)
                              (dir_flip_h (pacdir gs)).
 
 (** Draw [n] life icons in the status bar, right-aligned. *)
-Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : IO void :=
+Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : itree sdlE void :=
   match n with
   | 0 => Ret ghost
   | S n' =>
@@ -904,7 +907,7 @@ Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : IO void :=
   end.
 
 (** Draw the status bar: score on the left, lives on the right. *)
-Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : IO void :=
+Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : itree sdlE void :=
   draw_number_sprite ren (score gs) 10 (board_height * cell_size + 8) ;;
   draw_lives_aux ren (lives gs) 0.
 
@@ -913,7 +916,7 @@ Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : IO void :=
 Definition render_frame (ren : sdl_renderer) (tex : sdl_texture)
                         (gs : game_state)
                         (prev_pac : position) (prev_ghosts : list ghost_state)
-                        (t_num t_den : nat) (time_ms : nat) : IO void :=
+                        (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
   sdl_set_draw_color ren 0 0 0 ;;
   sdl_clear ren ;;
   draw_board_sdl ren gs time_ms ;;
@@ -926,7 +929,7 @@ Definition render_frame (ren : sdl_renderer) (tex : sdl_texture)
 Definition render_paused_frame (ren : sdl_renderer) (tex : sdl_texture)
                         (gs : game_state)
                         (prev_pac : position) (prev_ghosts : list ghost_state)
-                        (t_num t_den : nat) (time_ms : nat) : IO void :=
+                        (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
   sdl_set_draw_color ren 0 0 0 ;;
   sdl_clear ren ;;
   draw_board_sdl ren gs time_ms ;;
@@ -938,16 +941,23 @@ Definition render_paused_frame (ren : sdl_renderer) (tex : sdl_texture)
 
 (** * Event handling *)
 
-(** Map an SDL event code to a quit flag and updated game state.
-    Event codes: 1=quit, 2=up, 3=down, 4=left, 5=right, 6=pause. *)
-Definition handle_event (ev : nat) (gs : game_state) : (bool * game_state) :=
+(** Map a key-down event to a quit flag and updated game state. *)
+Definition handle_key_down (key : sdl_key) (gs : game_state) : (bool * game_state) :=
+  match key with
+  | KeyEscape | KeyQ => (true, gs)
+  | KeyUp | KeyW => (false, set_direction Up gs)
+  | KeyDown | KeyS => (false, set_direction Down gs)
+  | KeyLeft | KeyA => (false, set_direction Left gs)
+  | KeyRight | KeyD => (false, set_direction Right gs)
+  | KeySpace => (false, gs)
+  | _ => (false, gs)
+  end.
+
+(** Map a typed SDL event to a quit flag and updated game state. *)
+Definition handle_event (ev : sdl_event) (gs : game_state) : (bool * game_state) :=
   match ev with
-  | 1 => (true, gs)
-  | 2 => (false, set_direction Up gs)
-  | 3 => (false, set_direction Down gs)
-  | 4 => (false, set_direction Left gs)
-  | 5 => (false, set_direction Right gs)
-  | 6 => (false, gs)
+  | EventQuit => (true, gs)
+  | EventKeyDown key => handle_key_down key gs
   | _ => (false, gs)
   end.
 
@@ -995,13 +1005,13 @@ Definition lose_one_life (gs : game_state) : game_state :=
           (score gs) new_lives (dots_left gs) 0
           (Nat.eqb new_lives 0) (game_won gs).
 
-(** Apply a direction input event to the game state. *)
-Definition apply_direction (ev : nat) (gs : game_state) : game_state :=
-  match ev with
-  | 2 => set_direction Up gs
-  | 3 => set_direction Down gs
-  | 4 => set_direction Left gs
-  | 5 => set_direction Right gs
+(** Apply a direction key to the game state. *)
+Definition apply_direction (key : sdl_key) (gs : game_state) : game_state :=
+  match key with
+  | KeyUp | KeyW => set_direction Up gs
+  | KeyDown | KeyS => set_direction Down gs
+  | KeyLeft | KeyA => set_direction Left gs
+  | KeyRight | KeyD => set_direction Right gs
   | _ => gs
   end.
 
@@ -1023,7 +1033,7 @@ Record loop_state : Type := mkLoop {
 (** * Process one frame (non-recursive) *)
 
 (** Enforce frame timing: delay if the frame was faster than [frame_ms]. *)
-Definition frame_delay (frame_start : nat) : IO void :=
+Definition frame_delay (frame_start : nat) : itree sdlE void :=
   now2 <- sdl_get_ticks ;;
   let elapsed := now2 - frame_start in
   if Nat.ltb elapsed frame_ms
@@ -1047,7 +1057,7 @@ Definition snd_tap : PrimString.string := "assets/tap.mp3".
 Definition snd_win : PrimString.string := "assets/win.mp3".
 
 (** Select the collectible sound effect corresponding to the eaten cell. *)
-Definition play_cell_sound (c : cell) : IO void :=
+Definition play_cell_sound (c : cell) : itree sdlE void :=
   match c with
   | Dot => sdl_play_sound snd_tap
   | PowerPellet => sdl_play_sound snd_checkmark
@@ -1058,136 +1068,145 @@ Definition play_cell_sound (c : cell) : IO void :=
     check pixel collisions, render, and enforce frame timing.
     Returns [(quit, new_loop_state)] for the C++ while loop. *)
 Definition process_frame (ren : sdl_renderer) (ls : loop_state)
-  : IO (bool * loop_state) :=
+  : itree sdlE (bool * loop_state) :=
   ev <- sdl_poll_event ;;
-  if Nat.eqb ev 1 then Ret (true, ls)
-  else
-  now <- sdl_get_ticks ;;
-  let time_ms := now - ls_start_time ls in
-  match ls_phase ls with
-  | Playing =>
-    if Nat.eqb ev 6 then
-      render_paused_frame ren (ls_texture ls) (ls_game ls)
-                          (ls_prev_pac ls) (ls_prev_ghosts ls)
-                          0 1 time_ms ;;
-      frame_delay now ;;
-      Ret (false, mkLoop (ls_game ls) (ls_prev_pac ls) (ls_prev_ghosts ls)
-                         now (ls_start_time ls) (ls_texture ls)
-                         Paused now false)
-    else
-    let gs1 := apply_direction ev (ls_game ls) in
-    let elapsed := now - ls_last_tick ls in
-    let do_tick := Nat.leb tick_ms elapsed in
-    let gs2 := if do_tick then tick gs1 else gs1 in
-    let new_prev_pac := if do_tick then pacpos gs1
-                        else ls_prev_pac ls in
-    let new_prev_ghosts := if do_tick then ghosts gs1
-                           else ls_prev_ghosts ls in
-    let new_last_tick := if do_tick then now else ls_last_tick ls in
-    let eaten_cell := if do_tick
-                      then get_cell (prow (pacpos gs2)) (pcol (pacpos gs2))
-                                    (board gs1)
-                      else Empty in
-    let t_num := now - new_last_tick in
-    (* Compute interpolated player position *)
-    let ppx := lerp (cell_center_x (pcol new_prev_pac))
-                    (cell_center_x (pcol (pacpos gs2))) t_num tick_ms in
-    let ppy := lerp (cell_center_y (prow new_prev_pac))
-                    (cell_center_y (prow (pacpos gs2))) t_num tick_ms in
-    (* Check for win *)
-    if game_won gs2 then
-      sdl_play_sound snd_win ;;
-      render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
-                   t_num tick_ms time_ms ;;
-      Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
-                         new_last_tick (ls_start_time ls) (ls_texture ls)
-                         WinScreen now false)
-    else
-    (* Check pixel collision with ghosts *)
-    match find_pixel_collision ppx ppy (ghosts gs2) new_prev_ghosts
-            t_num tick_ms collision_threshold 0 with
-    | Some (idx, Frightened) =>
-      let gs3 := eat_ghost_idx idx gs2 in
-      let next_ls := mkLoop gs3 new_prev_pac new_prev_ghosts
-                            new_last_tick (ls_start_time ls) (ls_texture ls)
-                            Playing 0 false in
-      sdl_play_sound snd_kill_ghost ;;
-      render_frame ren (ls_texture ls) gs3 (ls_prev_pac next_ls)
-                   (ls_prev_ghosts next_ls)
-                   t_num tick_ms time_ms ;;
-      frame_delay now ;;
-      Ret (false, next_ls)
-    | Some (_, Chase) =>
-      let gs3 := lose_one_life gs2 in
-      let next_pac := pacpos gs3 in
-      let next_ghosts := ghosts gs3 in
-      if Nat.eqb (lives gs3) 0 then
-        let next_ls := mkLoop gs3 next_pac next_ghosts
-                              now (ls_start_time ls) (ls_texture ls)
-                              GameOverScreen now false in
-        sdl_play_sound snd_game_over ;;
-        Ret (false, next_ls)
+  match ev with
+  | EventQuit => Ret (true, ls)
+  | _ =>
+    now <- sdl_get_ticks ;;
+    let time_ms := now - ls_start_time ls in
+    match ls_phase ls with
+    | Playing =>
+      match ev with
+      | EventKeyDown KeySpace =>
+        render_paused_frame ren (ls_texture ls) (ls_game ls)
+                            (ls_prev_pac ls) (ls_prev_ghosts ls)
+                            0 1 time_ms ;;
+        frame_delay now ;;
+        Ret (false, mkLoop (ls_game ls) (ls_prev_pac ls) (ls_prev_ghosts ls)
+                           now (ls_start_time ls) (ls_texture ls)
+                           Paused now false)
+      | _ =>
+        let gs1 := match ev with
+                   | EventKeyDown key => apply_direction key (ls_game ls)
+                   | _ => ls_game ls
+                   end in
+        let elapsed := now - ls_last_tick ls in
+        let do_tick := Nat.leb tick_ms elapsed in
+        let gs2 := if do_tick then tick gs1 else gs1 in
+        let new_prev_pac := if do_tick then pacpos gs1
+                            else ls_prev_pac ls in
+        let new_prev_ghosts := if do_tick then ghosts gs1
+                               else ls_prev_ghosts ls in
+        let new_last_tick := if do_tick then now else ls_last_tick ls in
+        let eaten_cell := if do_tick
+                          then get_cell (prow (pacpos gs2)) (pcol (pacpos gs2))
+                                        (board gs1)
+                          else Empty in
+        let t_num := now - new_last_tick in
+        (* Compute interpolated player position *)
+        let ppx := lerp (cell_center_x (pcol new_prev_pac))
+                        (cell_center_x (pcol (pacpos gs2))) t_num tick_ms in
+        let ppy := lerp (cell_center_y (prow new_prev_pac))
+                        (cell_center_y (prow (pacpos gs2))) t_num tick_ms in
+        (* Check for win *)
+        if game_won gs2 then
+          sdl_play_sound snd_win ;;
+          render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
+                       t_num tick_ms time_ms ;;
+          Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
+                             new_last_tick (ls_start_time ls) (ls_texture ls)
+                             WinScreen now false)
+        else
+        (* Check pixel collision with ghosts *)
+        match find_pixel_collision ppx ppy (ghosts gs2) new_prev_ghosts
+                t_num tick_ms collision_threshold 0 with
+        | Some (idx, Frightened) =>
+          let gs3 := eat_ghost_idx idx gs2 in
+          let next_ls := mkLoop gs3 new_prev_pac new_prev_ghosts
+                                new_last_tick (ls_start_time ls) (ls_texture ls)
+                                Playing 0 false in
+          sdl_play_sound snd_kill_ghost ;;
+          render_frame ren (ls_texture ls) gs3 (ls_prev_pac next_ls)
+                       (ls_prev_ghosts next_ls)
+                       t_num tick_ms time_ms ;;
+          frame_delay now ;;
+          Ret (false, next_ls)
+        | Some (_, Chase) =>
+          let gs3 := lose_one_life gs2 in
+          let next_pac := pacpos gs3 in
+          let next_ghosts := ghosts gs3 in
+          if Nat.eqb (lives gs3) 0 then
+            let next_ls := mkLoop gs3 next_pac next_ghosts
+                                  now (ls_start_time ls) (ls_texture ls)
+                                  GameOverScreen now false in
+            sdl_play_sound snd_game_over ;;
+            Ret (false, next_ls)
+          else
+            let next_ls := mkLoop gs3 next_pac next_ghosts
+                                  now (ls_start_time ls) (ls_texture ls)
+                                  DeathPause now false in
+            sdl_play_sound snd_lose_life ;;
+            Ret (false, next_ls)
+        | None =>
+          play_cell_sound eaten_cell ;;
+          render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
+                       t_num tick_ms time_ms ;;
+          frame_delay now ;;
+          Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
+                             new_last_tick (ls_start_time ls) (ls_texture ls)
+                             Playing 0 false)
+        end
+      end
+
+    | Paused =>
+      match ev with
+      | EventKeyDown KeySpace =>
+        let gs := ls_game ls in
+        Ret (false, mkLoop gs (pacpos gs) (ghosts gs)
+                           now (ls_start_time ls) (ls_texture ls)
+                           Playing 0 false)
+      | _ =>
+        render_paused_frame ren (ls_texture ls) (ls_game ls)
+                            (ls_prev_pac ls) (ls_prev_ghosts ls)
+                            0 1 time_ms ;;
+        frame_delay now ;;
+        Ret (false, ls)
+      end
+
+    | DeathPause =>
+      if Nat.leb 2000 (now - ls_phase_time ls) then
+        Ret (false, mkLoop (ls_game ls) (pacpos (ls_game ls))
+                           (ghosts (ls_game ls)) now (ls_start_time ls)
+                           (ls_texture ls) Playing 0 false)
       else
-        let next_ls := mkLoop gs3 next_pac next_ghosts
-                              now (ls_start_time ls) (ls_texture ls)
-                              DeathPause now false in
-        sdl_play_sound snd_lose_life ;;
-        Ret (false, next_ls)
-    | None =>
-      play_cell_sound eaten_cell ;;
-      render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
-                   t_num tick_ms time_ms ;;
-      frame_delay now ;;
-      Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
-                         new_last_tick (ls_start_time ls) (ls_texture ls)
-                         Playing 0 false)
+        draw_message_screen ren (msg_lives_left (lives (ls_game ls))) ;;
+        frame_delay now ;;
+        Ret (false, ls)
+
+    | GameOverScreen =>
+      if Nat.leb 3000 (now - ls_phase_time ls) then
+        Ret (true, ls)
+      else
+        draw_message_screen ren msg_game_over ;;
+        frame_delay now ;;
+        Ret (false, ls)
+
+    | WinScreen =>
+      if Nat.leb 3000 (now - ls_phase_time ls) then
+        Ret (true, ls)
+      else
+        draw_message_screen ren msg_you_win ;;
+        frame_delay now ;;
+        Ret (false, ls)
     end
-
-  | Paused =>
-    if Nat.eqb ev 6 then
-      let gs := ls_game ls in
-      Ret (false, mkLoop gs (pacpos gs) (ghosts gs)
-                         now (ls_start_time ls) (ls_texture ls)
-                         Playing 0 false)
-    else
-      render_paused_frame ren (ls_texture ls) (ls_game ls)
-                          (ls_prev_pac ls) (ls_prev_ghosts ls)
-                          0 1 time_ms ;;
-      frame_delay now ;;
-      Ret (false, ls)
-
-  | DeathPause =>
-    if Nat.leb 2000 (now - ls_phase_time ls) then
-      Ret (false, mkLoop (ls_game ls) (pacpos (ls_game ls))
-                         (ghosts (ls_game ls)) now (ls_start_time ls)
-                         (ls_texture ls) Playing 0 false)
-    else
-      draw_message_screen ren (msg_lives_left (lives (ls_game ls))) ;;
-      frame_delay now ;;
-      Ret (false, ls)
-
-  | GameOverScreen =>
-    if Nat.leb 3000 (now - ls_phase_time ls) then
-      Ret (true, ls)
-    else
-      draw_message_screen ren msg_game_over ;;
-      frame_delay now ;;
-      Ret (false, ls)
-
-  | WinScreen =>
-    if Nat.leb 3000 (now - ls_phase_time ls) then
-      Ret (true, ls)
-    else
-      draw_message_screen ren msg_you_win ;;
-      frame_delay now ;;
-      Ret (false, ls)
   end.
 
 (** * Init and cleanup *)
 
 (** Initialize SDL, create the window and renderer, and build the
     initial [loop_state]. Returns the window, renderer, and loop state. *)
-Definition init_game : IO (sdl_window * sdl_renderer * loop_state) :=
+Definition init_game : itree sdlE (sdl_window * sdl_renderer * loop_state) :=
   win <- sdl_create_window "Rocqman" win_width win_height ;;
   ren <- sdl_create_renderer win ;;
   tex <- sdl_load_texture ren "assets/rocq.svg" ;;
@@ -1197,13 +1216,13 @@ Definition init_game : IO (sdl_window * sdl_renderer * loop_state) :=
   Ret (win, ren, ls).
 
 (** Destroy the renderer and window, shutting down SDL. *)
-Definition cleanup (ren : sdl_renderer) (win : sdl_window) : IO void :=
+Definition cleanup (ren : sdl_renderer) (win : sdl_window) : itree sdlE void :=
   sdl_destroy ren win.
 
 End Rocqman.
 
 Import Rocqman.
-Import MonadNotations.
+Import ITreeNotations.
 
 (** An extracted C integer type used as the program's return type. *)
 Axiom c_int : Type.
@@ -1211,13 +1230,13 @@ Axiom c_int : Type.
 Axiom c_zero : c_int.
 
 (** Destroy SDL resources and return a successful process exit code. *)
-Definition exit_game (win : sdl_window) (ren : sdl_renderer) : IO c_int :=
+Definition exit_game (win : sdl_window) (ren : sdl_renderer) : itree sdlE c_int :=
   cleanup ren win ;;
   Ret c_zero.
 
 (** Run the extracted main loop for up to [fuel] iterations. *)
 Fixpoint run_game (fuel : nat) (win : sdl_window) (ren : sdl_renderer)
-                  (ls : loop_state) : IO c_int :=
+                  (ls : loop_state) : itree sdlE c_int :=
   match fuel with
   | 0 => exit_game win ren
   | S fuel' =>
@@ -1230,7 +1249,7 @@ Fixpoint run_game (fuel : nat) (win : sdl_window) (ren : sdl_renderer)
   end.
 
 (** Initialize the game and enter the extracted top-level loop. *)
-Definition main : IO c_int :=
+Definition main : itree sdlE c_int :=
   init <- init_game ;;
   let '(win_ren, ls) := init in
   let '(win, ren) := win_ren in

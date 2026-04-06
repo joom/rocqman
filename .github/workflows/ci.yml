@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+        coq_version:
+          - "9.0"
+        ocaml_version:
+          - "4.14-flambda"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Normalize workspace permissions
+        run: |
+          sudo chmod -R a+rwX "$GITHUB_WORKSPACE"
+
+      - name: Build project
+        uses: coq-community/docker-coq-action@v1
+        with:
+          opam_file: "rocqman.opam"
+          coq_version: ${{ matrix.coq_version }}
+          ocaml_version: ${{ matrix.ocaml_version }}
+          before_install: |
+            startGroup "Install system packages"
+              sudo apt-get update -y -q
+              sudo apt-get install -y clang clang-format pkg-config libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev
+            endGroup
+            startGroup "Mark workspace as git-safe"
+              git config --global --add safe.directory "$PWD"
+            endGroup
+          install: |
+            startGroup "Install opam dependencies"
+              opam install -y --no-depexts rocq-runtime coq-itree coq-ext-lib coq-paco
+              opam exec -- which coqc
+            endGroup
+            startGroup "Build and install local Crane"
+              cd crane
+              opam exec -- dune build -p rocq-crane @install
+              opam exec -- dune install -p rocq-crane
+              cd ..
+            endGroup
+            startGroup "Build and install local SDL2 bindings"
+              cd rocq-crane-sdl2
+              opam exec -- dune build -p rocq-crane-sdl2 @install
+              opam exec -- dune install -p rocq-crane-sdl2
+              cd ..
+            endGroup
+          script: |
+            startGroup "Build Rocq theories"
+              opam exec -- make check
+            endGroup
+            startGroup "Build native executable"
+              opam exec -- make
+            endGroup
+          uninstall: |
+            startGroup "Skip opam uninstall"
+              opam list | rg '^rocqman ' || true
+            endGroup

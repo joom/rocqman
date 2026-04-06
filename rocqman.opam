@@ -1,0 +1,35 @@
+opam-version: "2.0"
+synopsis: "Verified Pacman-like game in Rocq extracted to C++ with Crane"
+description: "Rocqman is a Pacman-like game written in Rocq, with pure game logic, proofs about gameplay transitions, and extraction to C++ through Crane."
+maintainer: ["Joomy Korkut"]
+authors: ["Joomy Korkut"]
+license: "MIT"
+homepage: "https://github.com/joom/rocqman"
+bug-reports: "https://github.com/joom/rocqman/issues"
+depends: [
+  "ocaml"
+  "dune" {>= "3.17"}
+  "coq" {>= "9.0.0"}
+  "coq-itree"
+  "coq-ext-lib"
+  "coq-paco"
+  "rocq-runtime"
+  "rocq-crane" {= "dev"}
+  "rocq-crane-sdl2" {= "dev"}
+]
+build: [
+  "dune" "build"
+]
+install: [
+  "dune" "install"
+]
+flags: light-uninstall
+remove: [
+  ["dune" "uninstall"]
+]
+tags: [
+  "keyword:game"
+  "keyword:pacman"
+  "keyword:extraction"
+  "keyword:C++"
+]

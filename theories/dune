@@ -1,5 +1,5 @@
 (coq.theory
  (name RocqmanGame)
  (synopsis "Rocqman game in Rocq, extracted to C++ via Crane")
- (theories Stdlib Crane)
+ (theories Stdlib Crane ITree ExtLib Paco CraneSDL2)
  (flags (:standard -output-directory %{project_root})))

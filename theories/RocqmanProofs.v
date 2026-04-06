@@ -7,8 +7,8 @@ Import Rocqman.
 
 (** Relates a state to the pure gameplay updates that [process_frame] can apply. *)
 Inductive pure_step : game_state -> game_state -> Prop :=
-| PureStepApplyDirection : forall ev gs,
-    pure_step gs (apply_direction ev gs)
+| PureStepApplyDirection : forall key gs,
+    pure_step gs (apply_direction key gs)
 | PureStepTick : forall gs,
     pure_step gs (tick gs)
 | PureStepEatGhost : forall idx gs,
@@ -20,31 +20,31 @@ Inductive pure_step : game_state -> game_state -> Prop :=
 
 (** Changing direction never changes the current score. *)
 Lemma apply_direction_score :
-  forall ev gs, score (apply_direction ev gs) = score gs.
+  forall key gs, score (apply_direction key gs) = score gs.
 Proof.
-  intros ev gs.
+  intros key gs.
   unfold apply_direction, set_direction.
-  destruct ev as [| [| [| [| [| [| ev]]]]]]; simpl; try reflexivity;
+  destruct key; simpl; try reflexivity;
     destruct (can_move _ _ _); reflexivity.
 Qed.
 
 (** Changing direction never changes the number of lives. *)
 Lemma apply_direction_lives :
-  forall ev gs, lives (apply_direction ev gs) = lives gs.
+  forall key gs, lives (apply_direction key gs) = lives gs.
 Proof.
-  intros ev gs.
+  intros key gs.
   unfold apply_direction, set_direction.
-  destruct ev as [| [| [| [| [| [| ev]]]]]]; simpl; try reflexivity;
+  destruct key; simpl; try reflexivity;
     destruct (can_move _ _ _); reflexivity.
 Qed.
 
 (** Changing direction never changes the number of collectibles left. *)
 Lemma apply_direction_dots_left :
-  forall ev gs, dots_left (apply_direction ev gs) = dots_left gs.
+  forall key gs, dots_left (apply_direction key gs) = dots_left gs.
 Proof.
-  intros ev gs.
+  intros key gs.
   unfold apply_direction, set_direction.
-  destruct ev as [| [| [| [| [| [| ev]]]]]]; simpl; try reflexivity;
+  destruct key; simpl; try reflexivity;
     destruct (can_move _ _ _); reflexivity.
 Qed.
 
@@ -291,14 +291,17 @@ Qed.
 (** * Pure branch models for the paused and terminal-screen cases of [process_frame] *)
 
 (** Models the pure state update performed by the paused branch of [process_frame]. *)
-Definition paused_branch_result (ev now : nat) (ls : loop_state) : bool * loop_state :=
-  if Nat.eqb ev 6 then
+Definition paused_branch_result (ev : sdl_event) (now : nat) (ls : loop_state)
+  : bool * loop_state :=
+  match ev with
+  | EventKeyDown KeySpace =>
     let gs := ls_game ls in
     (false, mkLoop gs (pacpos gs) (ghosts gs)
                    now (ls_start_time ls) (ls_texture ls)
                    Playing 0 false)
-  else
+  | _ =>
     (false, ls).
+  end.
 
 (** Decides whether a terminal screen should quit once enough time has elapsed. *)
 Definition terminal_screen_should_quit (now : nat) (ls : loop_state) : bool :=
@@ -312,26 +315,24 @@ Definition terminal_screen_should_quit (now : nat) (ls : loop_state) : bool :=
 Theorem paused_branch_without_space_stays_paused :
   forall ls ev now,
     ls_phase ls = Paused ->
-    ev <> 6 ->
+    ev <> EventKeyDown KeySpace ->
     ls_phase (snd (paused_branch_result ev now ls)) = Paused.
 Proof.
   intros ls ev now Hphase Hspace.
   unfold paused_branch_result.
-  destruct (Nat.eqb ev 6) eqn:Hev.
-  - apply Nat.eqb_eq in Hev. congruence.
-  - simpl.
-    exact Hphase.
+  destruct ev; simpl; try exact Hphase.
+  destruct s; simpl; try exact Hphase.
+  exfalso. apply Hspace. reflexivity.
 Qed.
 
 (** Pressing space in a paused state returns the phase to [Playing]. *)
 Theorem paused_branch_with_space_returns_to_playing :
   forall ls now,
     ls_phase ls = Paused ->
-    ls_phase (snd (paused_branch_result 6 now ls)) = Playing.
+    ls_phase (snd (paused_branch_result (EventKeyDown KeySpace) now ls)) = Playing.
 Proof.
   intros ls now _.
   unfold paused_branch_result.
-  rewrite Nat.eqb_refl.
   simpl.
   reflexivity.
 Qed.
