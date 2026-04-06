@@ -1234,26 +1234,23 @@ Definition exit_game (win : sdl_window) (ren : sdl_renderer) : itree sdlE c_int 
   cleanup ren win ;;
   Ret c_zero.
 
-(** Run the extracted main loop for up to [fuel] iterations. *)
-Fixpoint run_game (fuel : nat) (win : sdl_window) (ren : sdl_renderer)
-                  (ls : loop_state) : itree sdlE c_int :=
-  match fuel with
-  | 0 => exit_game win ren
-  | S fuel' =>
-    res <- process_frame ren ls ;;
-    let '(quit, new_ls) := res in
-    if quit then
-      exit_game win ren
-    else
-      run_game fuel' win ren new_ls
-  end.
+(** Run the extracted main loop as a coinductive computation.
+    Uses Tau to guard the recursive call for Coq's termination checker. *)
+CoFixpoint run_game (win : sdl_window) (ren : sdl_renderer)
+                    (ls : loop_state) : itree sdlE c_int :=
+  res <- process_frame ren ls ;;
+  let '(quit, new_ls) := res in
+  if quit then
+    exit_game win ren
+  else
+    Tau (run_game win ren new_ls).
 
 (** Initialize the game and enter the extracted top-level loop. *)
 Definition main : itree sdlE c_int :=
   init <- init_game ;;
   let '(win_ren, ls) := init in
   let '(win, ren) := win_ren in
-  run_game 1000000 win ren ls.
+  run_game win ren ls.
 
 Crane Extract Inlined Constant c_int => "int".
 Crane Extract Inlined Constant c_zero => "0".
