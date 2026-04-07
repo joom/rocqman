@@ -1,4 +1,5 @@
 From Stdlib Require Import Lia Bool PeanoNat.
+From CraneSDL2 Require Import SDL.
 From RocqmanGame Require Import Rocqman.
 
 Import Rocqman.
@@ -159,11 +160,12 @@ Lemma move_pacman_score_monotone :
 Proof.
   intros gs.
   unfold move_pacman.
-  destruct (game_over gs || game_won gs) eqn:Hterminal; simpl; [lia|].
-  remember (move_pos (pacdir gs) (pacpos gs)) as new_pos.
-  destruct (is_wall (prow new_pos) (pcol new_pos) (board gs)) eqn:Hwall; simpl; [lia|].
-  remember (get_cell (prow new_pos) (pcol new_pos) (board gs)) as cell.
-  destruct cell; simpl; lia.
+  destruct (game_over gs || game_won gs); simpl; [lia|].
+  destruct (can_move (desired_dir gs) (pacpos gs) (board gs)); simpl;
+    (match goal with |- context [is_wall ?a ?b ?c] =>
+       destruct (is_wall a b c); simpl; [lia|] end);
+    (match goal with |- context [get_cell ?a ?b ?c] =>
+       destruct (get_cell a b c); simpl; lia end).
 Qed.
 
 (** One player-movement step never changes the life count directly. *)
@@ -172,11 +174,10 @@ Lemma move_pacman_lives :
 Proof.
   intros gs.
   unfold move_pacman.
-  destruct (game_over gs || game_won gs) eqn:Hterminal; simpl; [reflexivity|].
-  remember (move_pos (pacdir gs) (pacpos gs)) as new_pos.
-  destruct (is_wall (prow new_pos) (pcol new_pos) (board gs)) eqn:Hwall; simpl; [reflexivity|].
-  remember (get_cell (prow new_pos) (pcol new_pos) (board gs)) as cell.
-  destruct cell; reflexivity.
+  destruct (game_over gs || game_won gs); simpl; [reflexivity|].
+  destruct (can_move (desired_dir gs) (pacpos gs) (board gs)); simpl;
+    match goal with |- context [is_wall ?a ?b ?c] =>
+      destruct (is_wall a b c); simpl; reflexivity end.
 Qed.
 
 (** One player-movement step can only keep or decrease the collectible count. *)
@@ -185,12 +186,13 @@ Lemma move_pacman_dots_left_monotone :
 Proof.
   intros gs.
   unfold move_pacman.
-  destruct (game_over gs || game_won gs) eqn:Hterminal; simpl; [lia|].
-  remember (move_pos (pacdir gs) (pacpos gs)) as new_pos.
-  destruct (is_wall (prow new_pos) (pcol new_pos) (board gs)) eqn:Hwall; simpl; [lia|].
-  remember (get_cell (prow new_pos) (pcol new_pos) (board gs)) as cell.
-  destruct cell; simpl;
-    destruct (dots_left gs); simpl; lia.
+  destruct (game_over gs || game_won gs); simpl; [lia|].
+  destruct (can_move (desired_dir gs) (pacpos gs) (board gs)); simpl;
+    (match goal with |- context [is_wall ?a ?b ?c] =>
+       destruct (is_wall a b c); simpl; [lia|] end);
+    (match goal with |- context [get_cell ?a ?b ?c] =>
+       destruct (get_cell a b c); simpl;
+       destruct (dots_left gs); simpl; lia end).
 Qed.
 
 (** A full logical tick can only keep or increase the score. *)
@@ -300,7 +302,7 @@ Definition paused_branch_result (ev : sdl_event) (now : nat) (ls : loop_state)
                    now (ls_start_time ls) (ls_texture ls)
                    Playing 0 false)
   | _ =>
-    (false, ls).
+    (false, ls)
   end.
 
 (** Decides whether a terminal screen should quit once enough time has elapsed. *)
