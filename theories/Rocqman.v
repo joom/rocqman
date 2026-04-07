@@ -65,6 +65,7 @@ Record game_state : Type := mkState {
   board : list (list cell);
   pacpos : position;
   pacdir : direction;
+  desired_dir : direction;  (** Buffered direction input for responsive controls. *)
   ghosts : list ghost_state;
   score : nat;
   lives : nat;
@@ -194,18 +195,21 @@ Fixpoint update_ghost_modes (gs : list ghost_state) (powered : bool) : list ghos
     mkGhost (gpos g) (gdir g) mode :: update_ghost_modes rest powered
   end.
 
-(** Set Rocqman's direction if the move is valid. *)
+(** Set Rocqman's desired direction (always buffers input for better responsiveness). *)
 Definition set_direction (d : direction) (gs : game_state) : game_state :=
-  if can_move d (pacpos gs) (board gs)
-  then mkState (board gs) (pacpos gs) d (ghosts gs) (score gs) (lives gs)
-               (dots_left gs) (power_timer gs) (game_over gs) (game_won gs)
-  else gs.
+  mkState (board gs) (pacpos gs) (pacdir gs) d (ghosts gs) (score gs) (lives gs)
+          (dots_left gs) (power_timer gs) (game_over gs) (game_won gs).
 
-(** Move Rocqman one step, eating dots/pellets and updating score. *)
+(** Move Rocqman one step, eating dots/pellets and updating score.
+    Tries desired direction first for responsive input buffering. *)
 Definition move_pacman (gs : game_state) : game_state :=
   if game_over gs || game_won gs then gs
   else
-    let new_pos := move_pos (pacdir gs) (pacpos gs) in
+    (* Try desired direction first, fall back to current direction *)
+    let try_dir := if can_move (desired_dir gs) (pacpos gs) (board gs)
+                   then desired_dir gs
+                   else pacdir gs in
+    let new_pos := move_pos try_dir (pacpos gs) in
     if is_wall (prow new_pos) (pcol new_pos) (board gs) then gs
     else
       let cell := get_cell (prow new_pos) (pcol new_pos) (board gs) in
@@ -233,7 +237,7 @@ Definition move_pacman (gs : game_state) : game_state :=
                         | _ => ghosts gs
                         end in
       let won := Nat.eqb new_dots 0 in
-      mkState new_board new_pos (pacdir gs) new_ghosts
+      mkState new_board new_pos try_dir (desired_dir gs) new_ghosts
               (score gs + add_score) (lives gs)
               new_dots new_power won won.
 
@@ -303,7 +307,7 @@ Fixpoint move_ghosts_list (gs : list ghost_state) (pac : position)
 
 (** Advance all ghosts in the game state by one step. *)
 Definition move_ghosts (gs : game_state) : game_state :=
-  mkState (board gs) (pacpos gs) (pacdir gs)
+  mkState (board gs) (pacpos gs) (pacdir gs) (desired_dir gs)
           (move_ghosts_list (ghosts gs) (pacpos gs) (board gs))
           (score gs) (lives gs) (dots_left gs) (power_timer gs)
           (game_over gs) (game_won gs).
@@ -337,13 +341,13 @@ Definition check_collisions (gs : game_state) : game_state :=
            Nat.eqb (pcol (gpos g')) (pcol (pacpos gs))
         then respawn_ghost g'
         else g') (ghosts gs) in
-      mkState (board gs) (pacpos gs) (pacdir gs) new_ghosts
+      mkState (board gs) (pacpos gs) (pacdir gs) (desired_dir gs) new_ghosts
               (score gs + 200) (lives gs) (dots_left gs) (power_timer gs)
               (game_over gs) (game_won gs)
     | Chase =>
       let new_lives := Nat.pred (lives gs) in
       let dead := Nat.eqb new_lives 0 in
-      mkState (board gs) (mkPos 9 9) DirNone (ghosts gs)
+      mkState (board gs) (mkPos 9 9) DirNone DirNone (ghosts gs)
               (score gs) new_lives (dots_left gs) 0
               dead (game_won gs)
     end
@@ -356,7 +360,7 @@ Definition tick_power (gs : game_state) : game_state :=
   | S n =>
     let powered := negb (Nat.eqb n 0) in
     let new_ghosts := update_ghost_modes (ghosts gs) powered in
-    mkState (board gs) (pacpos gs) (pacdir gs) new_ghosts
+    mkState (board gs) (pacpos gs) (pacdir gs) (desired_dir gs) new_ghosts
             (score gs) (lives gs) (dots_left gs) n
             (game_over gs) (game_won gs)
   end.
@@ -388,6 +392,7 @@ Definition initial_state : game_state :=
   let b := set_cell 9 9 Empty initial_board in
   mkState b
           (mkPos 9 9)
+          DirNone
           DirNone
           initial_ghosts
           0
@@ -994,14 +999,14 @@ Definition eat_ghost_idx (idx : nat) (gs : game_state) : game_state :=
   let default_g := mkGhost (mkPos 0 0) DirNone Chase in
   let new_ghosts := replace_nth idx (ghosts gs)
                       (respawn_ghost (nth idx (ghosts gs) default_g)) in
-  mkState (board gs) (pacpos gs) (pacdir gs) new_ghosts
+  mkState (board gs) (pacpos gs) (pacdir gs) (desired_dir gs) new_ghosts
           (score gs + 200) (lives gs) (dots_left gs) (power_timer gs)
           (game_over gs) (game_won gs).
 
 (** Lose one life, respawn player at center, reset power timer. *)
 Definition lose_one_life (gs : game_state) : game_state :=
   let new_lives := Nat.pred (lives gs) in
-  mkState (board gs) (mkPos 9 9) DirNone (ghosts gs)
+  mkState (board gs) (mkPos 9 9) DirNone DirNone (ghosts gs)
           (score gs) new_lives (dots_left gs) 0
           (Nat.eqb new_lives 0) (game_won gs).
 
@@ -1086,11 +1091,77 @@ Definition process_frame (ren : sdl_renderer) (ls : loop_state)
         Ret (false, mkLoop (ls_game ls) (ls_prev_pac ls) (ls_prev_ghosts ls)
                            now (ls_start_time ls) (ls_texture ls)
                            Paused now false)
+      | EventKeyDown key =>
+        let '(quit, gs1) := handle_key_down key (ls_game ls) in
+        if quit then Ret (true, ls) else
+        let elapsed := now - ls_last_tick ls in
+        let do_tick := Nat.leb tick_ms elapsed in
+        let gs2 := if do_tick then tick gs1 else gs1 in
+        let new_prev_pac := if do_tick then pacpos gs1
+                            else ls_prev_pac ls in
+        let new_prev_ghosts := if do_tick then ghosts gs1
+                               else ls_prev_ghosts ls in
+        let new_last_tick := if do_tick then now else ls_last_tick ls in
+        let eaten_cell := if do_tick
+                          then get_cell (prow (pacpos gs2)) (pcol (pacpos gs2))
+                                        (board gs1)
+                          else Empty in
+        let t_num := now - new_last_tick in
+        (* Compute interpolated player position *)
+        let ppx := lerp (cell_center_x (pcol new_prev_pac))
+                        (cell_center_x (pcol (pacpos gs2))) t_num tick_ms in
+        let ppy := lerp (cell_center_y (prow new_prev_pac))
+                        (cell_center_y (prow (pacpos gs2))) t_num tick_ms in
+        (* Check for win *)
+        if game_won gs2 then
+          sdl_play_sound snd_win ;;
+          render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
+                       t_num tick_ms time_ms ;;
+          Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
+                             new_last_tick (ls_start_time ls) (ls_texture ls)
+                             WinScreen now false)
+        else
+        (* Check pixel collision with ghosts *)
+        match find_pixel_collision ppx ppy (ghosts gs2) new_prev_ghosts
+                t_num tick_ms collision_threshold 0 with
+        | Some (idx, Frightened) =>
+          let gs3 := eat_ghost_idx idx gs2 in
+          let next_ls := mkLoop gs3 new_prev_pac new_prev_ghosts
+                                new_last_tick (ls_start_time ls) (ls_texture ls)
+                                Playing 0 false in
+          sdl_play_sound snd_kill_ghost ;;
+          render_frame ren (ls_texture ls) gs3 (ls_prev_pac next_ls)
+                       (ls_prev_ghosts next_ls)
+                       t_num tick_ms time_ms ;;
+          frame_delay now ;;
+          Ret (false, next_ls)
+        | Some (_, Chase) =>
+          let gs3 := lose_one_life gs2 in
+          let next_pac := pacpos gs3 in
+          let next_ghosts := ghosts gs3 in
+          if Nat.eqb (lives gs3) 0 then
+            let next_ls := mkLoop gs3 next_pac next_ghosts
+                                  now (ls_start_time ls) (ls_texture ls)
+                                  GameOverScreen now false in
+            sdl_play_sound snd_game_over ;;
+            Ret (false, next_ls)
+          else
+            let next_ls := mkLoop gs3 next_pac next_ghosts
+                                  now (ls_start_time ls) (ls_texture ls)
+                                  DeathPause now false in
+            sdl_play_sound snd_lose_life ;;
+            Ret (false, next_ls)
+        | None =>
+          play_cell_sound eaten_cell ;;
+          render_frame ren (ls_texture ls) gs2 new_prev_pac new_prev_ghosts
+                       t_num tick_ms time_ms ;;
+          frame_delay now ;;
+          Ret (false, mkLoop gs2 new_prev_pac new_prev_ghosts
+                             new_last_tick (ls_start_time ls) (ls_texture ls)
+                             Playing 0 false)
+        end
       | _ =>
-        let gs1 := match ev with
-                   | EventKeyDown key => apply_direction key (ls_game ls)
-                   | _ => ls_game ls
-                   end in
+        let gs1 := ls_game ls in
         let elapsed := now - ls_last_tick ls in
         let do_tick := Nat.leb tick_ms elapsed in
         let gs2 := if do_tick then tick gs1 else gs1 in
@@ -1166,6 +1237,14 @@ Definition process_frame (ren : sdl_renderer) (ls : loop_state)
         Ret (false, mkLoop gs (pacpos gs) (ghosts gs)
                            now (ls_start_time ls) (ls_texture ls)
                            Playing 0 false)
+      | EventKeyDown key =>
+        let '(quit, _) := handle_key_down key (ls_game ls) in
+        if quit then Ret (true, ls) else
+        render_paused_frame ren (ls_texture ls) (ls_game ls)
+                            (ls_prev_pac ls) (ls_prev_ghosts ls)
+                            0 1 time_ms ;;
+        frame_delay now ;;
+        Ret (false, ls)
       | _ =>
         render_paused_frame ren (ls_texture ls) (ls_game ls)
                             (ls_prev_pac ls) (ls_prev_ghosts ls)
@@ -1254,6 +1333,12 @@ Definition main : itree sdlE c_int :=
 
 Crane Extract Inlined Constant c_int => "int".
 Crane Extract Inlined Constant c_zero => "0".
+
+(** Additional PeanoNat mappings not in Crane's NatIntStd (yet). *)
+Crane Extract Inlined Constant PeanoNat.Nat.even => "(%a0 % 2 == 0)".
+Crane Extract Inlined Constant PeanoNat.Nat.odd => "(%a0 % 2 == 1)".
+Crane Extract Inlined Constant PeanoNat.Nat.div2 => "(%a0 / 2)".
+Crane Extract Inlined Constant PeanoNat.Nat.testbit => "((%a0 >> %a1) & 1)".
 
 (** * Extraction
 
