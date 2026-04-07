@@ -1,0 +1,5 @@
+; Exclude submodule directories so that "dune test" from the root never
+; accidentally builds or runs the Crane / rocq-crane-sdl2 test suites.
+; Both packages are installed first (see Makefile install-crane /
+; install-sdl-bindings) and found via the opam/findlib search path.
+(dirs :standard \ crane rocq-crane-sdl2)

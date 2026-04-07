@@ -1,4 +1,4 @@
-(lang dune 3.18)
+(lang dune 3.17)
 (using coq 0.9)
 
 (package
