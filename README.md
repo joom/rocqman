@@ -23,6 +23,7 @@ You need:
 - SDL2
 - SDL2_image
 - SDL2_mixer
+- Emscripten, if you want to build the WebAssembly page
 
 ## Getting started
 
@@ -85,6 +86,15 @@ Build with a different optimization level:
 make OPT=-O2
 ```
 
+Build the WebAssembly page:
+
+```bash
+make web
+```
+
+This writes the browser build to `docs/index.html` and the accompanying
+Emscripten outputs in `docs/`.
+
 ## Running
 
 Run the game:
@@ -133,6 +143,10 @@ This removes:
 │   ├── Rocqman.v       game logic, rendering, extracted main
 │   ├── RocqmanProofs.v proofs about gameplay transitions and control flow
 │   └── dune            Rocq theory stanza
+├── src/
+│   ├── web_main.cpp    Emscripten frame-loop wrapper
+│   └── web_shell.html  browser page shell used by make web
+├── docs/               generated WebAssembly page
 ├── Makefile            extraction and native build entrypoint
 ├── dune-project        Dune project file
 └── README.md

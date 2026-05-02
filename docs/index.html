@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rocqman</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f6f8;
+        --panel: #ffffff;
+        --ink: #1b2228;
+        --muted: #5c6770;
+        --line: #d7dde3;
+        --blue: #1768b8;
+        --yellow: #d7a51e;
+        --green: #25905f;
+        --red: #be4b48;
+        --game-width: 608px;
+        --game-height: 520px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1160px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 608px) minmax(280px, 1fr);
+        gap: 24px;
+        align-items: start;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        font-size: 2.3rem;
+      }
+
+      h2 {
+        margin-top: 26px;
+        font-size: 1.05rem;
+      }
+
+      p {
+        margin: 12px 0 0;
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 20px;
+      }
+
+      kbd {
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        background: #f9fafb;
+        padding: 1px 5px;
+        font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .game-panel,
+      .info-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .game-panel {
+        overflow: hidden;
+      }
+
+      .canvas-wrap {
+        display: grid;
+        place-items: center;
+        background: #07090c;
+      }
+
+      canvas.emscripten {
+        display: block;
+        width: min(100%, var(--game-width));
+        height: auto;
+        aspect-ratio: 608 / 520;
+        background: #000;
+        outline: none;
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 44px;
+        padding: 10px 14px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      #status {
+        min-width: 0;
+      }
+
+      #progress {
+        width: 150px;
+      }
+
+      .info-panel {
+        padding: 22px;
+      }
+
+      .lede {
+        color: var(--muted);
+        font-size: 1.03rem;
+      }
+
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .badge {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 9px;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      .dot {
+        color: var(--yellow);
+      }
+
+      .pellet {
+        color: var(--green);
+      }
+
+      .danger {
+        color: var(--red);
+      }
+
+      textarea {
+        display: none;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          width: min(100% - 20px, 660px);
+          padding-top: 12px;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="layout">
+        <section class="game-panel" aria-label="Rocqman game">
+          <div class="canvas-wrap">
+            <canvas
+              class="emscripten"
+              id="canvas"
+              width="608"
+              height="520"
+              oncontextmenu="event.preventDefault()"
+              tabindex="-1"></canvas>
+          </div>
+          <div class="status-bar">
+            <span id="status">Downloading...</span>
+            <progress id="progress" value="0" max="100" hidden></progress>
+          </div>
+          <textarea id="output" aria-hidden="true"></textarea>
+        </section>
+
+        <section class="info-panel" aria-label="Project documentation">
+          <h1>Rocqman</h1>
+          <p class="lede">
+            A Pacman-like arcade game written in Rocq, extracted to C++ with
+            Crane, and rendered in the browser through SDL2 and WebAssembly.
+          </p>
+
+          <div class="badges" aria-label="Technology stack">
+            <span class="badge">Rocq</span>
+            <span class="badge">Crane C++ extraction</span>
+            <span class="badge">SDL2</span>
+            <span class="badge">Emscripten</span>
+            <span class="badge">WebAssembly</span>
+          </div>
+
+          <h2>Gameplay</h2>
+          <p>
+            Clear the maze by eating every <span class="dot">dot</span> and
+            <span class="pellet">power pellet</span>. Power pellets frighten
+            the ghosts for a short time, letting Rocqman eat them for bonus
+            points.
+          </p>
+          <ul>
+            <li>Dots are worth 10 points.</li>
+            <li>Power pellets are worth 50 points.</li>
+            <li>Frightened ghosts are worth 200 points.</li>
+            <li>Touching a chasing ghost costs one life.</li>
+          </ul>
+
+          <h2>Controls</h2>
+          <ul>
+            <li>Use arrow keys or <kbd>WASD</kbd> to buffer movement.</li>
+            <li><kbd>Space</kbd> pauses and unpauses.</li>
+            <li><kbd>Q</kbd> or <kbd>Esc</kbd> quits the current run.</li>
+          </ul>
+
+          <h2>Build Notes</h2>
+          <p>
+            The native project builds with <code>make</code>. This page is
+            generated by <code>make web</code>, which preloads the assets
+            directory for the sprite and sound effects.
+          </p>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      var statusElement = document.getElementById("status");
+      var progressElement = document.getElementById("progress");
+
+      var Module = {
+        print: function(text) {
+          console.log(text);
+        },
+        canvas: (function() {
+          return document.getElementById("canvas");
+        })(),
+        setStatus: function(text) {
+          if (!Module.setStatus.last) {
+            Module.setStatus.last = { time: Date.now(), text: "" };
+          }
+          if (text === Module.setStatus.last.text) return;
+
+          var match = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+          var now = Date.now();
+          if (match && now - Module.setStatus.last.time < 30) return;
+          Module.setStatus.last.time = now;
+          Module.setStatus.last.text = text;
+
+          if (match) {
+            text = match[1];
+            progressElement.value = parseInt(match[2], 10) * 100;
+            progressElement.max = parseInt(match[4], 10) * 100;
+            progressElement.hidden = false;
+          } else {
+            progressElement.value = null;
+            progressElement.max = null;
+            progressElement.hidden = true;
+          }
+          statusElement.textContent = text || "Ready";
+        },
+        totalDependencies: 0,
+        monitorRunDependencies: function(left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          Module.setStatus(left
+            ? "Preparing... (" + (this.totalDependencies - left) + "/" + this.totalDependencies + ")"
+            : "All downloads complete.");
+        }
+      };
+
+      Module.setStatus("Downloading...");
+      window.onerror = function() {
+        Module.setStatus("Exception thrown, see JavaScript console");
+      };
+    </script>
+    <script async type="text/javascript" src="index.js"></script>
+  </body>
+</html>

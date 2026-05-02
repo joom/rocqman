@@ -1314,7 +1314,7 @@ Definition process_frame (ren : sdl_renderer) (ls : loop_state)
 Definition init_game : itree sdlE (sdl_window * sdl_renderer * loop_state) :=
   win <- sdl_create_window "Rocqman" win_width win_height ;;
   ren <- sdl_create_renderer win ;;
-  tex <- sdl_load_texture ren "assets/rocq.svg" ;;
+  tex <- sdl_load_texture ren "assets/rocq.png" ;;
   t0 <- sdl_get_ticks ;;
   let gs := initial_state in
   let ls := mkLoop gs (pacpos gs) (ghosts gs) t0 t0 tex Playing 0 false in
