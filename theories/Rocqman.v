@@ -279,11 +279,11 @@ Definition try_dir (d : direction) (g : ghost_state) (target : position)
 (** Choose the best direction for a ghost_state by trying all four directions. *)
 Definition choose_ghost_dir (g : ghost_state) (target : position)
                             (b : list (list cell)) : direction :=
-  let '(d1, dist1) := try_dir Up    g target b DirNone 999 in
-  let '(d2, dist2) := try_dir Down  g target b d1 dist1 in
-  let '(d3, dist3) := try_dir Left  g target b d2 dist2 in
-  let '(d4, _)     := try_dir Right g target b d3 dist3 in
-  d4.
+  let best1 := try_dir Up    g target b DirNone 999 in
+  let best2 := try_dir Down  g target b (fst best1) (snd best1) in
+  let best3 := try_dir Left  g target b (fst best2) (snd best2) in
+  let best4 := try_dir Right g target b (fst best3) (snd best3) in
+  fst best4.
 
 (** Move a single ghost_state one step toward its target. *)
 Definition move_one_ghost (g : ghost_state) (pac : position)
@@ -407,33 +407,36 @@ Definition initial_state : game_state :=
     Low-level shape drawing built on [sdl_fill_rect] and [sdl_draw_point].
     Used by the sprite rendering functions below. *)
 
+Definition sdl_fill_rect_if (cond : bool) (ren : sdl_renderer)
+                            (x y w h : nat) : itree sdlE unit :=
+  if cond then sdl_fill_rect ren x y w h else Ret tt.
+
 (** Draw a filled circle row by row, computing the half-width at
     each scanline via integer square root. *)
 Fixpoint filled_circle_rows (ren : sdl_renderer) (cx base_y : nat)
-                            (radius i count : nat) : itree sdlE void :=
+                            (radius i count : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
     let dist := abs_diff i radius in
     let d2 := dist * dist in
     let r2 := radius * radius in
-    (if Nat.leb d2 r2 then
-       let half := Nat.sqrt (r2 - d2) in
-       sdl_fill_rect ren (cx - half) (base_y + i) (half + half + 1) 1
-     else Ret ghost) ;;
+    let half := Nat.sqrt (r2 - d2) in
+    sdl_fill_rect_if (Nat.leb d2 r2)
+                     ren (cx - half) (base_y + i) (half + half + 1) 1 ;;
     filled_circle_rows ren cx base_y radius (S i) count'
   end.
 
 (** Draw a filled circle centered at [(cx, cy)] with the given radius. *)
 Definition draw_filled_circle (ren : sdl_renderer) (cx cy radius : nat)
-  : itree sdlE void :=
+  : itree sdlE unit :=
   filled_circle_rows ren cx (cy - radius) radius 0 (radius + radius + 1).
 
 (** Draw the top half of a circle (used for the ghost_state head). *)
 Fixpoint semicircle_top_rows (ren : sdl_renderer) (cx base_y : nat)
-                             (radius i count : nat) : itree sdlE void :=
+                             (radius i count : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
     let dist := radius - i in  (* i goes 0..radius, dist goes radius..0 *)
     let half := Nat.sqrt (radius * radius - dist * dist) in
@@ -443,7 +446,7 @@ Fixpoint semicircle_top_rows (ren : sdl_renderer) (cx base_y : nat)
 
 (** Draw a top semicircle centered at [(cx, cy)]. *)
 Definition draw_top_semicircle (ren : sdl_renderer) (cx cy radius : nat)
-  : itree sdlE void :=
+  : itree sdlE unit :=
   semicircle_top_rows ren cx (cy - radius) radius 0 (radius + 1).
 
 (** * ghost_state sprite rendering
@@ -466,7 +469,7 @@ Definition ghost_body_color (color_idx : nat)
 (** Draw the ghost_state body: semicircle head, rectangular torso,
     and three scalloped bumps at the bottom. *)
 Definition draw_ghost_body (ren : sdl_renderer) (cx cy : nat)
-                           (radius : nat) (cr cg cb : nat) : itree sdlE void :=
+                           (radius : nat) (cr cg cb : nat) : itree sdlE unit :=
   sdl_set_draw_color ren cr cg cb ;;
   draw_top_semicircle ren cx cy radius ;;
   sdl_fill_rect ren (cx - radius) cy (radius + radius + 1) radius ;;
@@ -479,7 +482,7 @@ Definition draw_ghost_body (ren : sdl_renderer) (cx cy : nat)
 
 (** Draw the ghost_state's eyes: white sclera and blue pupils. *)
 Definition draw_ghost_eyes (ren : sdl_renderer) (cx cy : nat)
-                           (radius : nat) : itree sdlE void :=
+                           (radius : nat) : itree sdlE unit :=
   let eye_offset := Nat.div radius 3 in
   sdl_set_draw_color ren 255 255 255 ;;
   draw_filled_circle ren (cx - eye_offset) (cy - 2) 4 ;;
@@ -490,7 +493,7 @@ Definition draw_ghost_eyes (ren : sdl_renderer) (cx cy : nat)
 
 (** Draw a white ⊥ symbol on the ghost_state's body. *)
 Definition draw_ghost_bottom (ren : sdl_renderer)
-                             (cx cy : nat) : itree sdlE void :=
+                             (cx cy : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 255 255 255 ;;
   (* Vertical bar *)
   sdl_fill_rect ren (cx - 1) (cy - 7) 3 11 ;;
@@ -499,7 +502,7 @@ Definition draw_ghost_bottom (ren : sdl_renderer)
 
 (** Draw a complete ghost_state sprite with a ⊥ symbol on its body. *)
 Definition draw_ghost_sprite (ren : sdl_renderer)
-                             (px py color_idx : nat) : itree sdlE void :=
+                             (px py color_idx : nat) : itree sdlE unit :=
   let radius := 13 in
   let '(cr, cg, cb) := ghost_body_color color_idx in
   draw_ghost_body ren px py radius cr cg cb ;;
@@ -513,36 +516,42 @@ Definition draw_ghost_sprite (ren : sdl_renderer)
 
 (** Draw one row of pixels for the Rocqman sprite, skipping pixels
     inside the mouth wedge. *)
+Definition draw_pac_pixel_if (ren : sdl_renderer)
+                             (sx sy_row radius dx : nat)
+                             (fdy dir_ang mouth : R)
+                             (dist_sq r2 : nat) : itree sdlE unit :=
+  if Nat.leb dist_sq r2 then
+    let fdx := Rminus (INR dx) (INR radius) in
+    let ang := real_atan2 fdy fdx in
+    let rel0 := Rminus ang dir_ang in
+    let rel1 := if Rlt_dec PI rel0
+                then Rminus rel0 (PI + PI) else rel0 in
+    let rel := if Rlt_dec rel1 (Ropp PI)
+               then Rplus rel1 (PI + PI) else rel1 in
+    if Rlt_dec (Rabs rel) mouth
+    then Ret tt
+    else sdl_draw_point ren (sx + dx) sy_row
+  else Ret tt.
+
 Fixpoint pac_row_pixels (ren : sdl_renderer)
                         (sx sy_row : nat) (radius : nat)
                         (fdy dir_ang mouth : R)
-                        (dy_sq r2 : nat) (dx count : nat) : itree sdlE void :=
+                        (dy_sq r2 : nat) (dx count : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
     let dx_off := abs_diff dx radius in
     let dist_sq := dx_off * dx_off + dy_sq in
-    (if Nat.leb dist_sq r2 then
-       let fdx := Rminus (INR dx) (INR radius) in
-       let ang := real_atan2 fdy fdx in
-       let rel0 := Rminus ang dir_ang in
-       let rel1 := if Rlt_dec PI rel0
-                   then Rminus rel0 (PI + PI) else rel0 in
-       let rel := if Rlt_dec rel1 (Ropp PI)
-                  then Rplus rel1 (PI + PI) else rel1 in
-       if Rlt_dec (Rabs rel) mouth
-       then Ret ghost
-       else sdl_draw_point ren (sx + dx) sy_row
-     else Ret ghost) ;;
+    draw_pac_pixel_if ren sx sy_row radius dx fdy dir_ang mouth dist_sq r2 ;;
     pac_row_pixels ren sx sy_row radius fdy dir_ang mouth dy_sq r2 (S dx) count'
   end.
 
 (** Iterate over all rows of the Rocqman sprite bounding box. *)
 Fixpoint pac_rows (ren : sdl_renderer) (sx base_y : nat) (radius : nat)
                   (dir_ang mouth : R) (r2 diameter : nat)
-                  (dy count : nat) : itree sdlE void :=
+                  (dy count : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
     let dy_off := abs_diff dy radius in
     let dy_sq := dy_off * dy_off in
@@ -577,7 +586,7 @@ Definition compute_mouth_angle (time_ms : nat) : R :=
 (** Draw the complete Rocqman sprite at pixel position [(px, py)]
     facing direction [dir] with mouth animation based on [time_ms]. *)
 Definition draw_pacman_sprite (ren : sdl_renderer)
-                              (px py dir time_ms : nat) : itree sdlE void :=
+                              (px py dir time_ms : nat) : itree sdlE unit :=
   let radius := 14 in
   let diameter := radius + radius + 1 in
   let r2 := radius * radius in
@@ -636,23 +645,26 @@ Definition glyph_row_data (g row : nat) : nat :=
     ] []) 0.
 
 (** Draw one row of a glyph at pixel scale [s]. *)
+Definition draw_glyph_pixel_if (ren : sdl_renderer)
+                               (sx sy row_bits dx s : nat) : itree sdlE unit :=
+  sdl_fill_rect_if (nat_testbit row_bits (4 - dx))
+                   ren (sx + dx * s) sy s s.
+
 Fixpoint draw_glyph_row (ren : sdl_renderer)
                          (sx sy : nat) (row_bits : nat)
-                         (dx count s : nat) : itree sdlE void :=
+                         (dx count s : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
-    (if nat_testbit row_bits (4 - dx) then
-       sdl_fill_rect ren (sx + dx * s) sy s s
-     else Ret ghost) ;;
+    draw_glyph_pixel_if ren sx sy row_bits dx s ;;
     draw_glyph_row ren sx sy row_bits (S dx) count' s
   end.
 
 (** Draw all 7 rows of a glyph [g] at scale [s]. *)
 Fixpoint draw_glyph_rows (ren : sdl_renderer) (sx sy g : nat)
-                          (row count s : nat) : itree sdlE void :=
+                          (row count s : nat) : itree sdlE unit :=
   match count with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S count' =>
     let bits := glyph_row_data g row in
     draw_glyph_row ren sx (sy + row * s) bits 0 5 s ;;
@@ -660,14 +672,14 @@ Fixpoint draw_glyph_rows (ren : sdl_renderer) (sx sy g : nat)
   end.
 
 (** Draw a single glyph [g] at [(sx, sy)] with pixel scale [s]. *)
-Definition draw_one_glyph (ren : sdl_renderer) (sx sy g s : nat) : itree sdlE void :=
+Definition draw_one_glyph (ren : sdl_renderer) (sx sy g s : nat) : itree sdlE unit :=
   draw_glyph_rows ren sx sy g 0 7 s.
 
 (** Draw a list of glyphs left to right at scale [s]. *)
 Fixpoint draw_glyphs (ren : sdl_renderer) (sx sy s : nat)
-                      (glyphs : list nat) : itree sdlE void :=
+                      (glyphs : list nat) : itree sdlE unit :=
   match glyphs with
-  | [] => Ret ghost
+  | [] => Ret tt
   | g :: rest =>
     draw_one_glyph ren sx sy g s ;;
     draw_glyphs ren (sx + 6 * s) sy s rest
@@ -675,16 +687,16 @@ Fixpoint draw_glyphs (ren : sdl_renderer) (sx sy s : nat)
 
 (** Draw a list of digit glyphs at scale 3 (for score display). *)
 Fixpoint draw_number_digits (ren : sdl_renderer) (sx sy : nat)
-                            (digits : list nat) : itree sdlE void :=
+                            (digits : list nat) : itree sdlE unit :=
   match digits with
-  | [] => Ret ghost
+  | [] => Ret tt
   | d :: rest =>
     draw_one_glyph ren sx sy d 3 ;;
     draw_number_digits ren (sx + 18) sy rest
   end.
 
 (** Draw a natural number as white bitmap digits at [(sx, sy)]. *)
-Definition draw_number_sprite (ren : sdl_renderer) (n sx sy : nat) : itree sdlE void :=
+Definition draw_number_sprite (ren : sdl_renderer) (n sx sy : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 255 255 255 ;;
   draw_number_digits ren sx sy (nat_digit_list n).
 
@@ -710,7 +722,7 @@ Definition msg_paused : list nat :=
 
 (** Draw centered arcade text on a black screen. *)
 Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
-  : itree sdlE void :=
+  : itree sdlE unit :=
   let s := 4 in
   let glyph_w := 6 * s in
   let text_w := length msg * glyph_w in
@@ -723,7 +735,7 @@ Definition draw_message_screen (ren : sdl_renderer) (msg : list nat)
   sdl_present ren.
 
 (** Draw centered arcade text in the status bar area. *)
-Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : itree sdlE void :=
+Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : itree sdlE unit :=
   let s := 3 in
   let glyph_w := 6 * s in
   let text_w := length msg * glyph_w in
@@ -735,7 +747,7 @@ Definition draw_status_message (ren : sdl_renderer) (msg : list nat) : itree sdl
 (** * Life icon *)
 
 (** Draw a small red heart representing one remaining life. *)
-Definition draw_life_icon (ren : sdl_renderer) (x y : nat) : itree sdlE void :=
+Definition draw_life_icon (ren : sdl_renderer) (x y : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 150 10 35 ;;
   sdl_fill_rect ren (x - 9) (y - 6) 6 6 ;;
   sdl_fill_rect ren (x + 3) (y - 6) 6 6 ;;
@@ -802,7 +814,7 @@ Definition ghost_color_index (idx : nat) (gm : ghost_mode) : nat :=
     the full game frame: board cells, sprites, and the status bar. *)
 
 (** Draw a small green checkmark for power pellets. *)
-Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : itree sdlE void :=
+Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 60 200 90 ;;
   sdl_fill_rect ren (cx - 6) (cy + 1) 3 3 ;;
   sdl_fill_rect ren (cx - 3) (cy + 4) 3 3 ;;
@@ -812,9 +824,9 @@ Definition draw_dot_check (ren : sdl_renderer) (cx cy : nat) : itree sdlE void :
 (** Draw one row of board cells: walls as blue rectangles, dots as
     small white circles, power pellets as green checkmarks. *)
 Fixpoint draw_row_cells (ren : sdl_renderer) (row col : nat)
-                        (cells : list cell) (pellet_phase : nat) : itree sdlE void :=
+                        (cells : list cell) (pellet_phase : nat) : itree sdlE unit :=
   match cells with
-  | [] => Ret ghost
+  | [] => Ret tt
   | c :: rest =>
     (match c with
      | Wall =>
@@ -826,16 +838,16 @@ Fixpoint draw_row_cells (ren : sdl_renderer) (row col : nat)
        draw_filled_circle ren (cell_center_x col) (cell_center_y row) 2
      | PowerPellet =>
        draw_dot_check ren (cell_center_x col) (cell_center_y row)
-     | Empty => Ret ghost
+     | Empty => Ret tt
      end) ;;
     draw_row_cells ren row (S col) rest pellet_phase
   end.
 
 (** Draw all board rows. *)
 Fixpoint draw_board_rows (ren : sdl_renderer) (row : nat)
-                         (rows : list (list cell)) (pellet_phase : nat) : itree sdlE void :=
+                         (rows : list (list cell)) (pellet_phase : nat) : itree sdlE unit :=
   match rows with
-  | [] => Ret ghost
+  | [] => Ret tt
   | cells :: rest =>
     draw_row_cells ren row 0 cells pellet_phase ;;
     draw_board_rows ren (S row) rest pellet_phase
@@ -843,16 +855,16 @@ Fixpoint draw_board_rows (ren : sdl_renderer) (row : nat)
 
 (** Draw the entire game board. *)
 Definition draw_board_sdl (ren : sdl_renderer) (gs : game_state)
-                          (pellet_phase : nat) : itree sdlE void :=
+                          (pellet_phase : nat) : itree sdlE unit :=
   draw_board_rows ren 0 (board gs) pellet_phase.
 
 (** Draw all ghosts with smooth interpolation between their previous
     and current positions. *)
 Fixpoint draw_ghosts_aux (ren : sdl_renderer) (idx : nat) (gs : list ghost_state)
                          (prev_gs : list ghost_state)
-                         (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
+                         (t_num t_den : nat) (time_ms : nat) : itree sdlE unit :=
   match gs with
-  | [] => Ret ghost
+  | [] => Ret tt
   | g :: rest =>
     let prev_g := match prev_gs with
                   | [] => g
@@ -892,7 +904,7 @@ Definition dir_flip_h (d : direction) : bool :=
     from [prev_pos], rotated to face the current direction. *)
 Definition draw_player_sdl (ren : sdl_renderer) (tex : sdl_texture)
                            (gs : game_state) (prev_pos : position)
-                           (t_num t_den : nat) : itree sdlE void :=
+                           (t_num t_den : nat) : itree sdlE unit :=
   let px := lerp (cell_center_x (pcol prev_pos))
                  (cell_center_x (pcol (pacpos gs))) t_num t_den in
   let py := lerp (cell_center_y (prow prev_pos))
@@ -902,9 +914,9 @@ Definition draw_player_sdl (ren : sdl_renderer) (tex : sdl_texture)
                              (dir_flip_h (pacdir gs)).
 
 (** Draw [n] life icons in the status bar, right-aligned. *)
-Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : itree sdlE void :=
+Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : itree sdlE unit :=
   match n with
-  | 0 => Ret ghost
+  | 0 => Ret tt
   | S n' =>
     draw_life_icon ren (win_width - 30 - i * 28)
                    (board_height * cell_size + 8 + 12) ;;
@@ -912,7 +924,7 @@ Fixpoint draw_lives_aux (ren : sdl_renderer) (n : nat) (i : nat) : itree sdlE vo
   end.
 
 (** Draw the status bar: score on the left, lives on the right. *)
-Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : itree sdlE void :=
+Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : itree sdlE unit :=
   draw_number_sprite ren (score gs) 10 (board_height * cell_size + 8) ;;
   draw_lives_aux ren (lives gs) 0.
 
@@ -921,7 +933,7 @@ Definition draw_status_bar (ren : sdl_renderer) (gs : game_state) : itree sdlE v
 Definition render_frame (ren : sdl_renderer) (tex : sdl_texture)
                         (gs : game_state)
                         (prev_pac : position) (prev_ghosts : list ghost_state)
-                        (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
+                        (t_num t_den : nat) (time_ms : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 0 0 0 ;;
   sdl_clear ren ;;
   draw_board_sdl ren gs time_ms ;;
@@ -934,7 +946,7 @@ Definition render_frame (ren : sdl_renderer) (tex : sdl_texture)
 Definition render_paused_frame (ren : sdl_renderer) (tex : sdl_texture)
                         (gs : game_state)
                         (prev_pac : position) (prev_ghosts : list ghost_state)
-                        (t_num t_den : nat) (time_ms : nat) : itree sdlE void :=
+                        (t_num t_den : nat) (time_ms : nat) : itree sdlE unit :=
   sdl_set_draw_color ren 0 0 0 ;;
   sdl_clear ren ;;
   draw_board_sdl ren gs time_ms ;;
@@ -1038,12 +1050,12 @@ Record loop_state : Type := mkLoop {
 (** * Process one frame (non-recursive) *)
 
 (** Enforce frame timing: delay if the frame was faster than [frame_ms]. *)
-Definition frame_delay (frame_start : nat) : itree sdlE void :=
+Definition frame_delay (frame_start : nat) : itree sdlE unit :=
   now2 <- sdl_get_ticks ;;
   let elapsed := now2 - frame_start in
   if Nat.ltb elapsed frame_ms
   then sdl_delay (frame_ms - elapsed)
-  else Ret ghost.
+  else Ret tt.
 
 (** The collision distance threshold in pixels. *)
 Definition collision_threshold : nat := 22.
@@ -1061,13 +1073,27 @@ Definition snd_tap : PrimString.string := "assets/tap.mp3".
 (** Sound played when the player wins the game. *)
 Definition snd_win : PrimString.string := "assets/win.mp3".
 
-(** Select the collectible sound effect corresponding to the eaten cell. *)
-Definition play_cell_sound (c : cell) : itree sdlE void :=
+(** Play a sound only when [cond] holds. *)
+Definition sdl_play_sound_if (cond : bool) (path : PrimString.string)
+  : itree sdlE unit :=
+  if cond then sdl_play_sound path else Ret tt.
+
+Definition cell_is_dot (c : cell) : bool :=
   match c with
-  | Dot => sdl_play_sound snd_tap
-  | PowerPellet => sdl_play_sound snd_checkmark
-  | _ => Ret ghost
+  | Dot => true
+  | _ => false
   end.
+
+Definition cell_is_power_pellet (c : cell) : bool :=
+  match c with
+  | PowerPellet => true
+  | _ => false
+  end.
+
+(** Select the collectible sound effect corresponding to the eaten cell. *)
+Definition play_cell_sound (c : cell) : itree sdlE unit :=
+  sdl_play_sound_if (cell_is_dot c) snd_tap ;;
+  sdl_play_sound_if (cell_is_power_pellet c) snd_checkmark.
 
 (** Process a single frame: poll input, advance game logic,
     check pixel collisions, render, and enforce frame timing.
@@ -1295,7 +1321,7 @@ Definition init_game : itree sdlE (sdl_window * sdl_renderer * loop_state) :=
   Ret (win, ren, ls).
 
 (** Destroy the renderer and window, shutting down SDL. *)
-Definition cleanup (ren : sdl_renderer) (win : sdl_window) : itree sdlE void :=
+Definition cleanup (ren : sdl_renderer) (win : sdl_window) : itree sdlE unit :=
   sdl_destroy ren win.
 
 End Rocqman.
@@ -1303,20 +1329,20 @@ End Rocqman.
 Import Rocqman.
 Import ITreeNotations.
 
-(** An extracted C integer type used as the program's return type. *)
+(** An extracted C integer type used only as the program entrypoint result. *)
 Axiom c_int : Type.
 (** The integer zero returned on normal program exit. *)
 Axiom c_zero : c_int.
 
-(** Destroy SDL resources and return a successful process exit code. *)
-Definition exit_game (win : sdl_window) (ren : sdl_renderer) : itree sdlE c_int :=
+(** Destroy SDL resources before normal program exit. *)
+Definition exit_game (win : sdl_window) (ren : sdl_renderer) : itree sdlE unit :=
   cleanup ren win ;;
-  Ret c_zero.
+  Ret tt.
 
 (** Run the extracted main loop as a coinductive computation.
     Uses Tau to guard the recursive call for Coq's termination checker. *)
 CoFixpoint run_game (win : sdl_window) (ren : sdl_renderer)
-                    (ls : loop_state) : itree sdlE c_int :=
+                    (ls : loop_state) : itree sdlE unit :=
   res <- process_frame ren ls ;;
   let '(quit, new_ls) := res in
   if quit then
@@ -1329,7 +1355,8 @@ Definition main : itree sdlE c_int :=
   init <- init_game ;;
   let '(win_ren, ls) := init in
   let '(win, ren) := win_ren in
-  run_game win ren ls.
+  run_game win ren ls ;;
+  Ret c_zero.
 
 Crane Extract Inlined Constant c_int => "int".
 Crane Extract Inlined Constant c_zero => "0".
@@ -1344,4 +1371,5 @@ Crane Extract Inlined Constant PeanoNat.Nat.testbit => "((%a0 >> %a1) & 1)".
 
     Extract the [Rocqman] module to C++ files [rocqman.h] and [rocqman.cpp]. *)
 
+Set Crane Loopify.
 Crane Extraction "rocqman" Rocqman main.
