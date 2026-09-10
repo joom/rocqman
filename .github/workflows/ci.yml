@@ -44,7 +44,7 @@ jobs:
             endGroup
           install: |
             startGroup "Install opam dependencies"
-              opam install -y --no-depexts rocq-runtime coq-itree coq-ext-lib coq-paco
+              opam install -y --no-depexts --deps-only ./crane/rocq-crane.opam
               opam exec -- which coqc
             endGroup
             startGroup "Build and install local Crane"
